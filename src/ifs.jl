@@ -90,9 +90,17 @@ Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
 # Define deterministic algorithm for iterated function system.
 function deterministic_algorithm(ifs::IFS;
                                  initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
-                                 max_iter::Integer=5)
+                                 max_iter::Integer=5,
+                                 num_track_points::Integer=2^10,
+                                 num_update::Union{Void, Integer}=nothing,
+                                 monitor::Union{Void, Function}=x->nothing)
+    # Check number of update points.
+    if num_update == nothing
+        num_update = floor(num_steps / 5)
+    end
+
     # Check initial set.
-    domain_dim = ifs.contractions[1].domain.dim  # Contraction domains assumed to be same.
+    domain_dim = ifs.contractions[1].domain.dim
     if initial == nothing
         initial = randn(domain_dim, 1)
     else
@@ -102,15 +110,44 @@ function deterministic_algorithm(ifs::IFS;
     end
 
     # Compute the attractor
-    # TODO: Use Hausforff distance as a stopping criteria.
+    num_procs = nprocs()
     num_contractions = length(ifs.contractions)
-    x = initial
+    set = initial
     for i = 1 : max_iter
-        processes = [@spawn mapslices(ifs.contractions[k].rule, x, 1) for k = 1 : num_contractions]
-        x = reduce(hcat, fetch(processes[k]) for k = 1 : num_contractions)
+        num_points = length(set)
+        results = Array{Real, 2}(size(set)[2] * num_contractions)
+        for j = 1 : num_contractions
+            func = ifs.contractions[j].rule
+
+            # Distribute the set to available processors
+            chunk_size = floor(num_points / num_procs)
+            processes = Vector{Future}(num_procs)
+            for k = 1 : num_procs
+                chunk = set[:, 1 + (k - 1) * chunk_size : k * chunk_size]
+                processes[k] = @spawn mapslices(func, chunk, 1)
+            end
+
+            # Collect the results from the processors
+            result = Array{Real, 2}(size(set))
+            for k = 1 : num_procs
+                result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = fetch(processes[k])
+            end
+            results[:, 1 + (j - 1) * num_points : j * num_points] = result
+
+            # Check the number of track points
+            if size(results) > num_track_points
+                set = results[:, end - num_track_points : end]
+            end
+
+            # Moitor the points
+            if monitor != nothing && mod(i, num_update)
+                message = "Iteration: $i Points: $(length(set))"
+                monitor(set, message)
+            end
+        end
     end
 
-    return x
+    return set
 
 end  # End of deterministic_algorithm function
 
