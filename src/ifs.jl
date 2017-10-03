@@ -90,10 +90,10 @@ Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
 # Define deterministic algorithm for iterated function system.
 function deterministic_algorithm(ifs::IFS;
                                  initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
-                                 max_iter::Integer=5,
+                                 num_steps::Integer=10,
                                  num_track_points::Integer=2^10,
                                  num_update::Union{Void, Integer}=nothing,
-                                 monitor::Union{Void, Function}=x->nothing)
+                                 monitor::Union{Void, Function}=nothing)
     # Check number of update points.
     if num_update == nothing
         num_update = floor(num_steps / 5)
@@ -109,13 +109,18 @@ function deterministic_algorithm(ifs::IFS;
         end
     end
 
+    # If monitor is provided, construct a data channel
+    if monitor != nothing
+        channel = Channel(num_track_points)
+    end
+
     # Compute the attractor
     num_procs = nprocs()
     num_contractions = length(ifs.contractions)
     set = initial
-    for i = 1 : max_iter
+    for i = 1 : num_steps
         num_points = length(set)
-        results = Array{Real, 2}(size(set)[2] * num_contractions)
+        results = Matrix(size(set)[1], size(set)[2] * num_contractions)
         for j = 1 : num_contractions
             func = ifs.contractions[j].rule
 
@@ -133,19 +138,22 @@ function deterministic_algorithm(ifs::IFS;
                 result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = fetch(processes[k])
             end
             results[:, 1 + (j - 1) * num_points : j * num_points] = result
-
+            println("i: $i results: results")
             # Check the number of track points
-            if size(results) > num_track_points
+            if size(results)[2] > num_track_points
                 set = results[:, end - num_track_points : end]
             end
 
             # Moitor the points
-            if monitor != nothing && mod(i, num_update)
-                message = "Iteration: $i Points: $(length(set))"
-                monitor(set, message)
-            end
-        end
-    end
+            if monitor != nothing && size(set)[1] == 2 && mod(i, num_update)
+                # message = "Iteration: $i Points: $(length(set))"
+                # monitor(set, message)
+                push!(channel, (set[1, :], set[2, :]))
+                push!(channel, nothing)
+                @schedule monitor(channel)
+            end  # End of if
+        end  # End of for
+    end  # End of for
 
     return set
 
