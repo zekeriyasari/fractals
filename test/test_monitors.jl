@@ -9,6 +9,7 @@ function test_update_plot(initial::Vector{<:Real};
            monitor::Union{Void, Function}=nothing)
     # Construct a data channel
     channel = Channel(num_track_points)
+    @schedule monitor(channel)  # Launch the remote processes
 
     # Construct data and push into the channel
     x = linspace(0, 6 * pi, 100)
@@ -18,7 +19,6 @@ function test_update_plot(initial::Vector{<:Real};
         push!(channel, (x_data, y_data))  # Push data to channel
     end
     push!(channel, nothing)  # Poisson pill for the channel
-    @schedule monitor(channel)  # Launch the remote processes
 end
 
 test_update_plot([i for i = 0 : 0.1 : 6 * pi], monitor=update_plot)

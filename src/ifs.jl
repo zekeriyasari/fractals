@@ -2,10 +2,10 @@
 module IteratedFunctionSystem
 
 # TODO: Define Hausforff distance between sets
-# TODO: Terminate
 
 # Imports
 import Base.show
+import Base.Sys:CPU_CORES
 
 # Exports
 export Space, RealSpace
@@ -90,10 +90,11 @@ Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
 # Define deterministic algorithm for iterated function system.
 function deterministic_algorithm(ifs::IFS;
                                  initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
-                                 num_steps::Integer=10,
+                                 num_steps::Integer=15,
                                  num_track_points::Integer=2^10,
                                  num_update::Union{Void, Integer}=nothing,
                                  monitor::Union{Void, Function}=nothing)
+
     # Check number of update points.
     if num_update == nothing
         num_update = floor(num_steps / 5)
@@ -102,7 +103,7 @@ function deterministic_algorithm(ifs::IFS;
     # Check initial set.
     domain_dim = ifs.contractions[1].domain.dim
     if initial == nothing
-        initial = randn(domain_dim, 1)
+        initial = randn(domain_dim, CPU_CORES)
     else
         if size(initial)[1] != domain_dim
             throw(DimensionMismatch("Inital does not match ifs domain dimension."))
@@ -112,20 +113,20 @@ function deterministic_algorithm(ifs::IFS;
     # If monitor is provided, construct a data channel
     if monitor != nothing
         channel = Channel(num_track_points)
+        @schedule monitor(channel)
     end
 
     # Compute the attractor
-    num_procs = nprocs()
+    num_procs = CPU_CORES
     num_contractions = length(ifs.contractions)
     set = initial
     for i = 1 : num_steps
-        num_points = length(set)
-        results = Matrix(size(set)[1], size(set)[2] * num_contractions)
+        num_points = size(set)[2]
+        results = Matrix{Real}(size(set)[1], size(set)[2] * num_contractions)
         for j = 1 : num_contractions
             func = ifs.contractions[j].rule
-
             # Distribute the set to available processors
-            chunk_size = floor(num_points / num_procs)
+            chunk_size = Int(floor(num_points / num_procs))
             processes = Vector{Future}(num_procs)
             for k = 1 : num_procs
                 chunk = set[:, 1 + (k - 1) * chunk_size : k * chunk_size]
@@ -135,24 +136,25 @@ function deterministic_algorithm(ifs::IFS;
             # Collect the results from the processors
             result = Array{Real, 2}(size(set))
             for k = 1 : num_procs
-                result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = fetch(processes[k])
+                value = fetch(processes[k])
+                result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = value
             end
             results[:, 1 + (j - 1) * num_points : j * num_points] = result
-            println("i: $i results: results")
-            # Check the number of track points
-            if size(results)[2] > num_track_points
-                set = results[:, end - num_track_points : end]
-            end
-
-            # Moitor the points
-            if monitor != nothing && size(set)[1] == 2 && mod(i, num_update)
-                # message = "Iteration: $i Points: $(length(set))"
-                # monitor(set, message)
-                push!(channel, (set[1, :], set[2, :]))
-                push!(channel, nothing)
-                @schedule monitor(channel)
-            end  # End of if
         end  # End of for
+
+        # Check the number of track points
+        if size(results)[2] > num_track_points
+            results = results[:, end - num_track_points + 1 : end]
+        end
+
+        # Moitor the points
+        if monitor != nothing && size(set)[1] == 2 && mod(i, num_update) == 0
+            message = "iter: $i, num_points: $num_points"
+            push!(channel, (results[1, :], results[2, :]))
+        end  # End of if
+
+        set = results
+
     end  # End of for
 
     return set

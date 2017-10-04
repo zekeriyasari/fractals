@@ -1,6 +1,6 @@
 using PyPlot
 
-function update_plot(channel)
+function my_update_plot(channel)
     fig = figure()
     ax = fig[:add_subplot](111)
     x = rand()
@@ -32,7 +32,7 @@ function f()
         push!(channel, (x_data, y_data))
     end
     push!(channel, nothing)
-    @schedule update_plot(channel)
+    @schedule my_update_plot(channel)
 end
 
 f()
