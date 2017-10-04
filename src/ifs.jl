@@ -1,7 +1,7 @@
-
+"""
+IteratedFunctionSystem module for analysis of fractals.
+"""
 module IteratedFunctionSystem
-
-# TODO: Define Hausforff distance between sets
 
 # Imports
 import Base.show
@@ -18,7 +18,11 @@ abstract type Space{T<:Number} end
 abstract type Transformation end
 
 
-# Define RealSpace
+"""
+    RealSpace{T<:Real}(set::Type{Vector{T}}, dim::Integer)
+
+Space consisting of real vector `set` of length `dim`.
+"""
 struct RealSpace{T<:Real} <: Space{T}
     set::Type{Vector{T}}
     dim::Integer
@@ -27,23 +31,28 @@ struct RealSpace{T<:Real} <: Space{T}
             throw(ArgumentError("Dimension must be nonnegative integer"))
         end
         new(set, dim)
-    end  # End of function RealSpace
-end  # End of type RealSpace
-
+    end
+end
+# Constructor rule out explicit type declaration.
 RealSpace(set::Type{Vector{T}}, dim::Integer) where {T<:Real} =
     RealSpace{T}(set::Type{Vector{T}}, dim::Integer)
-
+# Add method to `Base.show` to display `RealSpace` types.
 Base.show(io::IO, space::RealSpace) = print(io, "RealSpace\n
-                                                 \tset: $(space.set)\n
-                                                 \tdim: $(space.dim)")
+                                                 set: $(space.set)\n
+                                                 dim: $(space.dim)")
 
 
-# Define contraction transformations
+"""
+    Contraction(rule::Function, domain::Space, range::Space, contractivity::Real)
+
+Contractivity transformation from `domain` to `range` given by the `rule` with
+contractivity factor of `contractivity` which is a positive real less than 1.
+"""
 struct Contraction <: Transformation
     rule::Function
     domain::Space
     range::Space
-    contractivity::Number
+    contractivity::Real
     function Contraction(rule, domain, range, contractivity)
         if 0 < contractivity < 1
             new(rule, domain, range, contractivity)
@@ -52,16 +61,21 @@ struct Contraction <: Transformation
         end
     end
 end
-
+# Add method to `Base.show` to display `Contraction` types.
 Base.show(io::IO, contraction::Contraction) =
     print(io, "Contraction\n
-               \trule: $(contraction.rule)\n
-               \tdomain: $(contraction.domain)\n
-               \trange: $(contraction.range)\n
-               \tcontractivity: $(contraction.contractivity)")
+               rule: $(contraction.rule)\n
+               domain: $(contraction.domain)\n
+               range: $(contraction.range)\n
+               contractivity: $(contraction.contractivity)")
 
 
-# Define IteratedFunctionSystem
+"""
+    IFS(contractions::Vector{Contraction}, contractivity::Real)
+
+Iterated function system consiting of `contractions` transformation with
+`contractivity` which is maximum of contractivities of `contractions`.
+"""
 struct IFS
     contractions::Vector{Contraction}
     contractivity::Real
@@ -69,25 +83,42 @@ struct IFS
         if  0 < contractivity < 1
             new(contractions, contractivity)
         else
-            throw("Contractivity must be real between 0 and 1")
+            throw("Contractivity must be a real between 0 and 1")
         end
     end
 end
-
+# Constructor to rule out explicit `contractivity` declarations.
 function IFS(contractions)
     contractivities = [contractions[k].contractivity for k = 1 : length(contractions)]
     IFS(contractions, maximum(contractivities))
 end
-
+# Constructor to convert row arrays to column arrays
 IFS(contractions::Array{Contraction, 2}) =
     IFS(reshape(contractions, length(contractions), ))
-
+# Add method `Base.show` to display `IFS` types.
 Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
-                                         \tcontractions: $(ifs.contractions)\n
-                                         \tcontractivity: $(ifs.contractivity)")
+                                         contractions: $(ifs.contractions)\n
+                                         contractivity: $(ifs.contractivity)")
 
 
-# Define deterministic algorithm for iterated function system.
+"""
+    deterministic_algorithm(ifs::IFS,
+                            initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
+                            num_steps::Integer=15,
+                            num_track_points::Integer=2^10,
+                            num_update::Union{Void, Integer}=nothing,
+                            monitor::Union{Void, Function}=nothing)
+
+Deterministic algorithm to compute the attractor of the `IFS`.
+
+Deterministic algorithm to compute the attractor of the `IFS` starting with
+the initial set `initial`. During computation, `num_steps` itearations are taken.
+`num_track_points` is the number of points in the set during computation of the
+IFS. If the number elements in the set is increased greater than `num_track_points`,
+last `num_track_points` of the set is taken and other points are discarded. If `monitor`
+is provided, a remote process is launched to plot the set if the length of the is
+reached to `num_update`.
+"""
 function deterministic_algorithm(ifs::IFS;
                                  initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
                                  num_steps::Integer=15,
@@ -97,7 +128,7 @@ function deterministic_algorithm(ifs::IFS;
 
     # Check number of update points.
     if num_update == nothing
-        num_update = floor(num_steps / 5)
+        num_update = Int(floor(num_steps / 5))
     end
 
     # Check initial set.
@@ -112,8 +143,8 @@ function deterministic_algorithm(ifs::IFS;
 
     # If monitor is provided, construct a data channel
     if monitor != nothing
-        channel = Channel(num_track_points)
-        @schedule monitor(channel)
+        channel = Channel(num_track_points)  # Construct data channel
+        @schedule monitor(channel)  # Launch the remote monitor.
     end
 
     # Compute the attractor
@@ -125,6 +156,7 @@ function deterministic_algorithm(ifs::IFS;
         results = Matrix{Real}(size(set)[1], size(set)[2] * num_contractions)
         for j = 1 : num_contractions
             func = ifs.contractions[j].rule
+
             # Distribute the set to available processors
             chunk_size = Int(floor(num_points / num_procs))
             processes = Vector{Future}(num_procs)

@@ -7,19 +7,31 @@ include("../src/monitors.jl")
 using IteratedFunctionSystem
 using UnitTest
 using Monitors
-using PyPlot
 
-# domain = RealSpace(Vector{Real}, 1)
-# range = RealSpace(Vector{Real}, 1)
-# trfm1 = Contraction(x -> 1/2 * x, domain, range, 1/2)
-# trfm2 = Contraction(x -> 1/2 * x + 1/2, domain, range, 1/2)
-# ifs = IFS([trfm1, trfm2])
-
+println("\nTest: RealSpace")
 domain = RealSpace(Vector{Real}, 2)
+equal(domain.dim, 2) ? pass() : fail("Expected 2, got $(domain.dim), instead")
 range = RealSpace(Vector{Real}, 2)
+equal(range.dim, 2) ? pass() : fail("Expected 2, got $(range.dim), instead")
+println("Test: RealSpace passed.")
+
+println("\nTest: Contraction started...")
+f1(x) = [0.5 0.; 0. 0.5] * x + [1; 1]
+trfm1 = Contraction(f1, domain, range, 0.5)
+equal(trfm1.domain, domain) ? pass() : fail("Expected $domain, got $(trfm1.domain) instead.")
+equal(trfm1.range, range) ? pass() : fail("Expected $range, got $(trfm1.range) instead.")
+data = rand(2, 10)
+for i = 1 : size(data)[2]
+    expected = f1(data[:, i])
+    calculated = trfm1.rule(data[:, i])
+    equal(expected, calculated) ? pass() : fail("Expected $expected, got $calculated, instead")
+end
+println("Test: Contraction passed.")
+
+println("Test: IFS started...")
 trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
 trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
 trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
 ifs = IFS([trfm1, trfm2, trfm3])
-res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=20, num_track_points=2^12)
-# plot(res[1, :], res[2, :], ".")
+res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=50, num_track_points=2^10)
+println("Test: IFS passed. ")

@@ -33,7 +33,7 @@ end  # End of fail function
 
 Checks if `a` is equal to `b`
 """
-function equal(a::Real, b::Real)
+function equal(a::Any, b::Any)
     return a == b
 end
 
