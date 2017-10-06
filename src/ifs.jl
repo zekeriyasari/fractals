@@ -174,10 +174,10 @@ function deterministic_algorithm(ifs::IFS;
             results[:, 1 + (j - 1) * num_points : j * num_points] = result
         end  # End of for
 
-        # Check the number of track points
-        if size(results)[2] > num_track_points
-            results = results[:, end - num_track_points + 1 : end]
-        end
+        # # Check the number of track points
+        # if size(results)[2] > num_track_points
+        #     results = results[:, end - num_track_points + 1 : end]
+        # end
 
         # Moitor the points
         if monitor != nothing && size(set)[1] == 2 && mod(i, num_update) == 0

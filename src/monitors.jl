@@ -25,7 +25,7 @@ function update_plot(channel::Channel{Any};
     # Construct the plot window
     fig = figure()
     ax = fig[:add_subplot](111)
-    ax[:grid]()
+    # ax[:grid]()
     ax[:set_autoscaley_on](true)
     ax[:set_title](message)
 

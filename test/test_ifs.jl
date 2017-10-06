@@ -29,9 +29,17 @@ end
 println("Test: Contraction passed.")
 
 println("Test: IFS started...")
-trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
-trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
-trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
-ifs = IFS([trfm1, trfm2, trfm3])
-res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=50, num_track_points=2^10)
+# # Define contractions for Sierpinski triangle
+# trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
+# trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
+# trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
+# ifs = IFS([trfm1, trfm2, trfm3])
+# res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=20, num_track_points=2^10)
+# Define contractions for Sierpinski triangle
+trfm1 = Contraction(x ->  [0. 0.; 0. 0.16] * x + [0; 0], domain, range, 0.5)
+trfm2 = Contraction(x ->  [0.85 0.04; -0.04 0.85] * x + [0; 1.6], domain, range, 0.5)
+trfm3 = Contraction(x ->  [0.2 -0.26; 0.23 0.22] * x + [0; 1.6], domain, range, 0.5)
+trfm4 = Contraction(x ->  [-0.15 0.28; 0.26 0.24] * x + [0; 0.44], domain, range, 0.5)
+ifs = IFS([trfm1, trfm2, trfm3, trfm4])
+res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=10, num_track_points=2^10)
 println("Test: IFS passed. ")
