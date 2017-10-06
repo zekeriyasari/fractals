@@ -124,7 +124,8 @@ function deterministic_algorithm(ifs::IFS;
                                  num_steps::Integer=15,
                                  num_track_points::Integer=2^10,
                                  num_update::Union{Void, Integer}=nothing,
-                                 monitor::Union{Void, Function}=nothing)
+                                 monitor::Union{Void, Function}=nothing,
+                                 multi_proc::Bool=true)
 
     # Check number of update points.
     if num_update == nothing
@@ -134,12 +135,17 @@ function deterministic_algorithm(ifs::IFS;
     # Check initial set.
     domain_dim = ifs.contractions[1].domain.dim
     if initial == nothing
-        initial = randn(domain_dim, CPU_CORES)
+        if multi_proc
+            initial = randn(domain_dim, CPU_CORES)
+        else
+            initial = rand(domain_dim, 1)
+        end
     else
         if size(initial)[1] != domain_dim
             throw(DimensionMismatch("Inital does not match ifs domain dimension."))
         end
     end
+    println("Initial $initial")
 
     # If monitor is provided, construct a data channel
     if monitor != nothing
@@ -154,25 +160,34 @@ function deterministic_algorithm(ifs::IFS;
     for i = 1 : num_steps
         num_points = size(set)[2]
         results = Matrix{Real}(size(set)[1], size(set)[2] * num_contractions)
-        for j = 1 : num_contractions
-            func = ifs.contractions[j].rule
 
-            # Distribute the set to available processors
-            chunk_size = Int(floor(num_points / num_procs))
-            processes = Vector{Future}(num_procs)
-            for k = 1 : num_procs
-                chunk = set[:, 1 + (k - 1) * chunk_size : k * chunk_size]
-                processes[k] = @spawn mapslices(func, chunk, 1)
-            end
+        if multi_proc && num_procs > 2  # If enabled and possible, use multiple cores.
+            for j = 1 : num_contractions
+                func = ifs.contractions[j].rule
 
-            # Collect the results from the processors
-            result = Array{Real, 2}(size(set))
-            for k = 1 : num_procs
-                value = fetch(processes[k])
-                result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = value
-            end
-            results[:, 1 + (j - 1) * num_points : j * num_points] = result
-        end  # End of for
+                # Distribute the set to available processors
+                chunk_size = Int(floor(num_points / num_procs))
+                processes = Vector{Future}(num_procs)
+                for k = 1 : num_procs
+                    chunk = set[:, 1 + (k - 1) * chunk_size : k * chunk_size]
+                    processes[k] = @spawn mapslices(func, chunk, 1)
+                end
+
+                # Collect the results from the processors
+                result = Array{Real, 2}(size(set))
+                for k = 1 : num_procs
+                    value = fetch(processes[k])
+                    result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = value
+                end
+                results[:, 1 + (j - 1) * num_points : j * num_points] = result
+            end  # End of for
+        else  # If not possible to use multiprocessing, use single core.
+            for j = 1 : num_contractions
+                func = ifs.contractions[j].rule
+                result = mapslices(func, set, 1)
+                results[:, 1 + (j - 1) * num_points : j * num_points] = result
+            end  # End of for
+        end  # End of if-else.
 
         # # Check the number of track points
         # if size(results)[2] > num_track_points
