@@ -6,12 +6,13 @@ module IteratedFunctionSystem
 # Imports
 import Base.show
 import Base.Sys:CPU_CORES
+using StatsBase:sample, Weights
 
 # Exports
 export Space, RealSpace
 export Transformation, Contraction
 export IFS
-export deterministic_algorithm
+export deterministic_algorithm, random_algorithm
 
 # Define abstract types
 abstract type Space{T<:Number} end
@@ -37,9 +38,9 @@ end
 RealSpace(set::Type{Vector{T}}, dim::Integer) where {T<:Real} =
     RealSpace{T}(set::Type{Vector{T}}, dim::Integer)
 # Add method to `Base.show` to display `RealSpace` types.
-Base.show(io::IO, space::RealSpace) = print(io, "RealSpace\n
-                                                 set: $(space.set)\n
-                                                 dim: $(space.dim)")
+# Base.show(io::IO, space::RealSpace) = print(io, "RealSpace\n
+#                                                  set: $(space.set)\n
+#                                                  dim: $(space.dim)")
 
 
 """
@@ -62,12 +63,12 @@ struct Contraction <: Transformation
     end
 end
 # Add method to `Base.show` to display `Contraction` types.
-Base.show(io::IO, contraction::Contraction) =
-    print(io, "Contraction\n
-               rule: $(contraction.rule)\n
-               domain: $(contraction.domain)\n
-               range: $(contraction.range)\n
-               contractivity: $(contraction.contractivity)")
+# Base.show(io::IO, contraction::Contraction) =
+#     print(io, "Contraction\n
+#                rule: $(contraction.rule)\n
+#                domain: $(contraction.domain)\n
+#                range: $(contraction.range)\n
+#                contractivity: $(contraction.contractivity)")
 
 
 """
@@ -78,27 +79,30 @@ Iterated function system consiting of `contractions` transformation with
 """
 struct IFS
     contractions::Vector{Contraction}
+    probabilities::Vector{Real}
     contractivity::Real
-    function IFS(contractions, contractivity)
-        if  0 < contractivity < 1
-            new(contractions, contractivity)
-        else
-            throw("Contractivity must be a real between 0 and 1")
+    function IFS(contractions, probabilities, contractivity)
+        if contractivity > 1 || contractivity < 0
+            error("Contractivity must be positive real between 0 and 1")
         end
+        if sum(probabilities) != 1
+            error("Probabilities must sum up to 1")
+        end
+        new(contractions, probabilities, contractivity)
     end
 end
 # Constructor to rule out explicit `contractivity` declarations.
 function IFS(contractions)
     contractivities = [contractions[k].contractivity for k = 1 : length(contractions)]
-    IFS(contractions, maximum(contractivities))
+    IFS(contractions, ones(length(contractions)) / length(contractions), maximum(contractivities))
 end
 # Constructor to convert row arrays to column arrays
 IFS(contractions::Array{Contraction, 2}) =
     IFS(reshape(contractions, length(contractions), ))
-# Add method `Base.show` to display `IFS` types.
-Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
-                                         contractions: $(ifs.contractions)\n
-                                         contractivity: $(ifs.contractivity)")
+# # Add method `Base.show` to display `IFS` types.
+# Base.show(io::IO, ifs::IFS) = print(io, "IFS\n
+#                                          contractions: $(ifs.contractions)\n
+#                                          contractivity: $(ifs.contractivity)")
 
 
 """
@@ -136,7 +140,7 @@ function deterministic_algorithm(ifs::IFS;
     domain_dim = ifs.contractions[1].domain.dim
     if initial == nothing
         if multi_proc
-            initial = randn(domain_dim, CPU_CORES)
+            initial = rand(domain_dim, CPU_CORES)
         else
             initial = rand(domain_dim, 1)
         end
@@ -145,7 +149,6 @@ function deterministic_algorithm(ifs::IFS;
             throw(DimensionMismatch("Inital does not match ifs domain dimension."))
         end
     end
-    println("Initial $initial")
 
     # If monitor is provided, construct a data channel
     if monitor != nothing
@@ -207,5 +210,69 @@ function deterministic_algorithm(ifs::IFS;
     return set
 
 end  # End of deterministic_algorithm function
+
+function random_worker(ifs::IFS, initial::Matrix{<:Real}, chunk_size::Integer; probabilities=nothing)
+    # Check probabilities
+    if probabilities == nothing
+        probabilities = ifs.probabilities
+    end
+
+    data = Matrix{Real}(ifs.contractions[1].domain.dim, chunk_size + 1)
+    data[:, 1] = initial
+    for i = 1 : chunk_size
+        func = sample(ifs.contractions, Weights(probabilities))
+        data[:, i + 1] = func.rule(data[:, i])
+    end
+    return data
+end  # End of random_worker
+
+function random_algorithm(ifs::IFS;
+                          initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
+                          probabilities::Union{Vector{<:Real}, Void}=nothing,
+                          num_steps::Integer=15,
+                          num_update::Union{Void, Integer}=nothing,
+                          monitor::Union{Void, Function}=nothing,
+                          multi_proc::Bool=false)
+    # Check the probabilities
+    if probabilities != nothing
+        sum(probabilities) != 1 && error("Sum of probabilities must be 1")
+        length(probabilities) != length(ifs.contractions) && error("Length of probabilities does not match to ifs.contractions.")
+    else
+        probabilities = ifs.probabilities
+    end  # End of if-else.
+
+    # Check initial set.
+    domain_dim = ifs.contractions[1].domain.dim
+    if initial == nothing
+        if multi_proc
+            initial = rand(domain_dim, CPU_CORES)
+        else
+            initial = rand(domain_dim, 1)
+        end
+    else
+        if size(initial)[1] != domain_dim
+            throw(DimensionMismatch("Inital does not match ifs domain dimension."))
+        end
+    end
+
+    # If monitor is provided, construct a data channel
+    if monitor != nothing
+        channel = Channel(num_track_points)  # Construct data channel
+        @schedule monitor(channel)  # Launch the remote monitor.
+    end
+
+    # Compute the attractor
+    num_procs = CPU_CORES
+    attractor = Matrix{Real}(size(initial)[1], num_steps + 1)
+    attractor[:, 1] = initial
+    if multi_proc && num_procs > 2
+        chunk_size = Int(floor(num_steps / num_procs))
+    else
+        attractor = random_worker(ifs, initial, num_steps, probabilities=probabilities)
+    end  # End of if-else.
+
+    return attractor
+
+end  # End of random_algorithm function.
 
 end # End of IteratedFunctionSystem
