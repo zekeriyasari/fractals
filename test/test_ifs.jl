@@ -29,12 +29,12 @@ end
 println("Test: Contraction passed.")
 
 println("Test: IFS started...")
-# # Define contractions for Sierpinski triangle using deterministic_algorithm.
-# trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
-# trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
-# trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
-# ifs = IFS([trfm1, trfm2, trfm3])
-# res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=20, num_track_points=2^10)
+# Define contractions for Sierpinski triangle using deterministic_algorithm.
+trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
+trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
+trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
+ifs = IFS([trfm1, trfm2, trfm3])
+res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=10, num_track_points=2^10)
 
 # # Define contractions for Sierpinski triangle using deterministic_algorithm.
 # trfm1 = Contraction(x ->  [0. 0.; 0. 0.16] * x + [0; 0], domain, range, 0.5)
@@ -44,12 +44,12 @@ println("Test: IFS started...")
 # ifs = IFS([trfm1, trfm2, trfm3, trfm4])
 # res = deterministic_algorithm(ifs, monitor=update_plot, num_steps=8, num_track_points=2^10, multi_proc=true)
 
-# Define contractions for Sierpinski triangle using random_algorithm.
-trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
-trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
-trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
-ifs = IFS([trfm1, trfm2, trfm3])
-res = random_algorithm(ifs, probabilities=[0.33, 0.33, 0.34], num_steps=5000)
-using PyPlot
-plot(res[1, :], res[2, :], ".")
+# # Define contractions for Sierpinski triangle using random_algorithm.
+# trfm1 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 1], domain, range, 0.5)
+# trfm2 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [1; 50], domain, range, 0.5)
+# trfm3 = Contraction(x ->  [0.5 0.; 0. 0.5] * x + [25; 50], domain, range, 0.5)
+# ifs = IFS([trfm1, trfm2, trfm3])
+# res = random_algorithm(ifs, probabilities=[0.33, 0.33, 0.34], num_steps=5000)
+# using PyPlot
+# plot(res[1, :], res[2, :], ".")
 println("Test: IFS passed. ")

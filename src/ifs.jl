@@ -106,8 +106,18 @@ IFS(contractions::Array{Contraction, 2}) =
 
 
 """
+    deterministic_worker(func::Function, chunk::Array{<:Real, 2})
+
+Deterministic worker function that applies `func` to a `chunk` of data.
+"""
+function deterministic_worker(func::Function, chunk::Array{<:Real, 2})
+    return mapslices(func, chunk, 1)
+end
+
+
+"""
     deterministic_algorithm(ifs::IFS,
-                            initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
+                            initial::Union{Void, Vector{<:Real}=nothing,
                             num_steps::Integer=15,
                             num_track_points::Integer=2^10,
                             num_update::Union{Void, Integer}=nothing,
@@ -124,29 +134,19 @@ is provided, a remote process is launched to plot the set if the length of the i
 reached to `num_update`.
 """
 function deterministic_algorithm(ifs::IFS;
-                                 initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
-                                 num_steps::Integer=15,
-                                 num_track_points::Integer=2^10,
-                                 num_update::Union{Void, Integer}=nothing,
+                                 initial::Union{Void, Vector{<:Real}}=nothing,
+                                 num_steps::Int=10,
+                                 num_track_points::Int=2^10,
+                                 num_update::Union{Void, Int}=nothing,
                                  monitor::Union{Void, Function}=nothing,
                                  multi_proc::Bool=true)
-
-    # Check number of update points.
-    if num_update == nothing
-        num_update = Int(floor(num_steps / 5))
-    end
-
     # Check initial set.
     domain_dim = ifs.contractions[1].domain.dim
     if initial == nothing
-        if multi_proc
-            initial = rand(domain_dim, CPU_CORES)
-        else
-            initial = rand(domain_dim, 1)
-        end
+        initial = rand(domain_dim, 1)
     else
         if size(initial)[1] != domain_dim
-            throw(DimensionMismatch("Inital does not match ifs domain dimension."))
+            throw(DimensionMismatch("Initial does not match ifs domain dimension."))
         end
     end
 
@@ -154,6 +154,11 @@ function deterministic_algorithm(ifs::IFS;
     if monitor != nothing
         channel = Channel(num_track_points)  # Construct data channel
         @schedule monitor(channel)  # Launch the remote monitor.
+
+        # Check number of update points.
+        if num_update == nothing
+            num_update = Int(floor(num_steps / 5))
+        end
     end
 
     # Compute the attractor
@@ -162,48 +167,36 @@ function deterministic_algorithm(ifs::IFS;
     set = initial
     for i = 1 : num_steps
         num_points = size(set)[2]
-        results = Matrix{Real}(size(set)[1], size(set)[2] * num_contractions)
-
-        if multi_proc && num_procs > 2  # If enabled and possible, use multiple cores.
-            for j = 1 : num_contractions
-                func = ifs.contractions[j].rule
-
-                # Distribute the set to available processors
+        next_set = zeros(size(set)[1], size(set)[2] * num_contractions)
+        for j = 1 : num_contractions
+            func = ifs.contractions[j].rule
+            if multi_proc && num_procs > 2
+                # Distribute the set to available processors.
+                # TODO: Check if chunk_size is meaningfull.
                 chunk_size = Int(floor(num_points / num_procs))
                 processes = Vector{Future}(num_procs)
                 for k = 1 : num_procs
                     chunk = set[:, 1 + (k - 1) * chunk_size : k * chunk_size]
-                    processes[k] = @spawn mapslices(func, chunk, 1)
-                end
-
-                # Collect the results from the processors
-                result = Array{Real, 2}(size(set))
+                    processes[k] = @spawn deterministic_worker(func, chunk)
+                end  # End of for
+                # Collect the results from the processors.
+                temp = zeros(size(set))
                 for k = 1 : num_procs
-                    value = fetch(processes[k])
-                    result[:, 1 + (k - 1) * chunk_size : k * chunk_size] = value
+                    temp[:, 1 + (k - 1) * chunk_size : k * chunk_size] = fetch(processes[k])
                 end
-                results[:, 1 + (j - 1) * num_points : j * num_points] = result
-            end  # End of for
-        else  # If not possible to use multiprocessing, use single core.
-            for j = 1 : num_contractions
-                func = ifs.contractions[j].rule
-                result = mapslices(func, set, 1)
-                results[:, 1 + (j - 1) * num_points : j * num_points] = result
-            end  # End of for
-        end  # End of if-else.
-
-        # # Check the number of track points
-        # if size(results)[2] > num_track_points
-        #     results = results[:, end - num_track_points + 1 : end]
-        # end
+            else
+                temp = deterministic_worker(func, set)
+            end
+            next_set[:, 1 + (j - 1) * num_points : j * num_points] = temp
+        end  # End of for.
 
         # Moitor the points
-        if monitor != nothing && size(set)[1] == 2 && mod(i, num_update) == 0
+        if monitor != nothing && mod(i, num_update) == 0
             message = "iter: $i, num_points: $num_points"
-            push!(channel, (results[1, :], results[2, :]))
+            push!(channel, (next_set[1, :], next_set[2, :]))
         end  # End of if
 
-        set = results
+        set = next_set
 
     end  # End of for
 
@@ -211,68 +204,6 @@ function deterministic_algorithm(ifs::IFS;
 
 end  # End of deterministic_algorithm function
 
-function random_worker(ifs::IFS, initial::Matrix{<:Real}, chunk_size::Integer; probabilities=nothing)
-    # Check probabilities
-    if probabilities == nothing
-        probabilities = ifs.probabilities
-    end
 
-    data = Matrix{Real}(ifs.contractions[1].domain.dim, chunk_size + 1)
-    data[:, 1] = initial
-    for i = 1 : chunk_size
-        func = sample(ifs.contractions, Weights(probabilities))
-        data[:, i + 1] = func.rule(data[:, i])
-    end
-    return data
-end  # End of random_worker
-
-function random_algorithm(ifs::IFS;
-                          initial::Union{Void, Vector{T} where {T<:Real}}=nothing,
-                          probabilities::Union{Vector{<:Real}, Void}=nothing,
-                          num_steps::Integer=15,
-                          num_update::Union{Void, Integer}=nothing,
-                          monitor::Union{Void, Function}=nothing,
-                          multi_proc::Bool=false)
-    # Check the probabilities
-    if probabilities != nothing
-        sum(probabilities) != 1 && error("Sum of probabilities must be 1")
-        length(probabilities) != length(ifs.contractions) && error("Length of probabilities does not match to ifs.contractions.")
-    else
-        probabilities = ifs.probabilities
-    end  # End of if-else.
-
-    # Check initial set.
-    domain_dim = ifs.contractions[1].domain.dim
-    if initial == nothing
-        if multi_proc
-            initial = rand(domain_dim, CPU_CORES)
-        else
-            initial = rand(domain_dim, 1)
-        end
-    else
-        if size(initial)[1] != domain_dim
-            throw(DimensionMismatch("Inital does not match ifs domain dimension."))
-        end
-    end
-
-    # If monitor is provided, construct a data channel
-    if monitor != nothing
-        channel = Channel(num_track_points)  # Construct data channel
-        @schedule monitor(channel)  # Launch the remote monitor.
-    end
-
-    # Compute the attractor
-    num_procs = CPU_CORES
-    attractor = Matrix{Real}(size(initial)[1], num_steps + 1)
-    attractor[:, 1] = initial
-    if multi_proc && num_procs > 2
-        chunk_size = Int(floor(num_steps / num_procs))
-    else
-        attractor = random_worker(ifs, initial, num_steps, probabilities=probabilities)
-    end  # End of if-else.
-
-    return attractor
-
-end  # End of random_algorithm function.
 
 end # End of IteratedFunctionSystem
