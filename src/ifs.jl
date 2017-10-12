@@ -31,7 +31,20 @@ end
 function deterministic_algorithm(funcs::AbstractArray{Function},
                                  initial::AbstractArray{<:Real},
                                  num_iter::Integer;
-                                 multi_procs::Bool=true)
+                                 multi_procs::Bool=true,
+                                 kwargs...)
+    # Check monitoring status.
+    kwargs = Dict(kwargs)
+    monitor_exists = false
+    if haskey(kwargs, :monitor)
+        monitor_exists = true
+        monitor = pop!(kwargs, :monitor)
+        channel_size = pop!(kwargs, :channel_size, 1000)
+        channel = Channel{Any}(channel_size)
+        num_track_points = pop!(kwargs, :num_track_points, floor(Int, num_iter / 5))
+        @schedule monitor(channel)
+    end
+
     # Check the initial
     if ndims(initial) == 1
         initial = reshape(initial, length(initial), 1)
@@ -64,6 +77,13 @@ function deterministic_algorithm(funcs::AbstractArray{Function},
             next_set[:, 1 + (j - 1) * num_points : j * num_points] = temp
         end
         set = next_set
+
+        # If monitoring exist, update monitor data
+        if monitor_exists && size(set)[2] >= num_track_points
+            msg = "Iteration: $i Number of points: $(size(set)[2])"
+            push!(channel, (set[1, :], set[2, :], msg))
+        end
+
     end
     return set
 end  # deterministic_algorithm

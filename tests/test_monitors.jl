@@ -1,12 +1,13 @@
 # Test script to test remote plot
 
+workspace()
 include("../src/monitors.jl")
 
 using Monitors
 
 function test_update_plot(initial::Vector{<:Real};
-           num_track_points::Integer=2^10,
-           monitor::Union{Void, Function}=nothing)
+                          num_track_points::Integer=2^10,
+                          monitor::Union{Void, Function}=nothing)
     # Construct a data channel
     channel = Channel(num_track_points)
     @schedule monitor(channel)  # Launch the remote processes

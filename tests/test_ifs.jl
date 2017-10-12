@@ -1,10 +1,12 @@
 workspace()
-
 include("../src/ifs.jl")
+include("../src/monitors.jl")
 using IFS
 using Base.Test
+using Monitors
 
-@test_skip @testset "DeterministicWorker Test" begin
+
+@testset "DeterministicWorker Test" begin
     # 2-dimensional fucntion test.
     A, b = [1 2; 3 4], [5; 6]
     f(x) = A * x + b
@@ -21,7 +23,7 @@ using Base.Test
 end
 
 
-@test_skip @testset "DeterministicAlgrithm Test" begin
+@testset "DeterministicAlgrithm Test" begin
     # Sierpinski triangle ifs code
     f1(x) = [0.5 0; 0 0.5] * x + [1; 1]
     f2(x) = [0.5 0; 0 0.5] * x + [1; 50]
@@ -35,7 +37,7 @@ end
 end
 
 
-@test_skip @testset "RandomWorker Test" begin
+@testset "RandomWorker Test" begin
     f1(x) = [0.5 0; 0 0.5] * x + [1; 1]
     f2(x) = [0.5 0; 0 0.5] * x + [1; 50]
     f3(x) = [0.5 0; 0 0.5] * x + [50; 50]
@@ -55,8 +57,4 @@ end
     probabilities = [0.33; 0.33; 0.34]
     @test size(random_algorithm([f1, f2, f3], probabilities, x0, 10, multi_procs=false)) == (2, 10)
     @test size(random_algorithm([f1, f2, f3], probabilities, x0, 10, multi_procs=true)) == (2, 10)
-    # Plot the results
-    using PyPlot
-    attractor = random_algorithm([f1, f2, f3], probabilities, x0, 10000, multi_procs=false)
-    plot(attractor[1, :], attractor[2, :], ".", linewidth=0.1)
 end
